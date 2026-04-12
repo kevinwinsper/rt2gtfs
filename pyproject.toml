@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rt2gtfs"
+version = "0.1.0"
+description = "Convert real-time vehicle position observations into corrected observed GTFS timetables"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  {name = "Zihao Chen"}
+]
+license = { text = "MIT" }
+keywords = ["gtfs", "gtfs-realtime", "public-transport", "transit", "accessibility"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "numpy",
+  "pandas",
+  "pytz",
+  "gtfs-realtime-bindings",
+  "requests",
+  "bods-client"
+]
+[project.urls]
+Homepage = "https://github.com/kevinwinsper/rt2gtfs"
+Repository = "https://github.com/kevinwinsper/rt2gtfs"
+Issues = "https://github.com/kevinwinsper/rt2gtfs/issues"
+
+[project.scripts]
+rt2gtfs = "rt2gtfs.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
