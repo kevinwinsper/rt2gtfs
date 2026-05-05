@@ -10,6 +10,23 @@ import pandas as pd
 
 from .logging_utils import get_logger
 
+GTFS_ID_COLS = {
+    "agency_id",
+    "route_id",
+    "service_id",
+    "trip_id",
+    "shape_id",
+    "stop_id",
+    "block_id",
+    "parent_station",
+}
+
+def _force_gtfs_ids_to_string(df: pd.DataFrame) -> pd.DataFrame:
+    for col in GTFS_ID_COLS:
+        if col in df.columns:
+            df[col] = df[col].astype("string")
+    return df
+
 
 def get_naptan_ref(naptan_path: str | Path) -> pd.DataFrame:
     naptan_path = Path(naptan_path)
@@ -214,7 +231,10 @@ def load_full_gtfs(
         file_path = extract_dir / name
         if not file_path.exists():
             raise FileNotFoundError(f"Expected GTFS file not found: {file_path}")
-        frames.append(pd.read_csv(file_path, low_memory=False))
+        df = pd.read_csv(file_path, low_memory=False)
+        df = _force_gtfs_ids_to_string(df)
+        frames.append(df)
+
     return frames
 
 

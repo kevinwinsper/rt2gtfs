@@ -142,7 +142,7 @@ def _merge_matches_with_schedule_data(
 
     # Convert route_id to int64
     # TO_DO: Ideally when reading GTFS data types should be specified
-    matching_df_min["route_id"] = matching_df_min["route_id"].astype("Int64")
+    # matching_df_min["route_id"] = matching_df_min["route_id"].astype("Int64")
 
     matching_df_min.rename(columns={'nearest_stop_id': 'stop_id'}, inplace=True)
 
