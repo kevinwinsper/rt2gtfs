@@ -170,6 +170,29 @@ The package produces:
 
 ---
 
+## Citation
+
+If you would like to acknowledge `rt2gtfs` in your research or work, please cite the associated arXiv paper:
+
+Chen, Z. and Botta, F. (2026). *rt2gtfs: A scalable framework for correcting public transport timetables using real-time data for accessibility analysis*. arXiv:2603.11477. https://doi.org/10.48550/arXiv.2603.11477
+
+BibTeX:
+
+```bibtex
+@misc{chen2026scalable,
+  title = {rt2gtfs: A scalable framework for correcting public transport timetables using real-time data for accessibility analysis},
+  author = {Chen, Zihao and Botta, Federico},
+  year = {2026},
+  eprint = {2603.11477},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.CY},
+  doi = {10.48550/arXiv.2603.11477},
+  url = {https://arxiv.org/abs/2603.11477}
+}
+```
+
+---
+
 ## Acknowledgements
 
 This work builds on ideas and approaches developed in prior work on GTFS and GTFS-Realtime processing.
