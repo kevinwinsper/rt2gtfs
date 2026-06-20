@@ -21,6 +21,23 @@ GTFS_ID_COLS = {
     "parent_station",
 }
 
+OPTIONAL_GTFS_TABLE_COLUMNS = {
+    "calendar_dates.txt": ["service_id", "date", "exception_type"],
+    "feed_info.txt": [
+        "feed_publisher_name",
+        "feed_publisher_url",
+        "feed_lang",
+        "feed_version",
+    ],
+    "shapes.txt": [
+        "shape_id",
+        "shape_pt_lat",
+        "shape_pt_lon",
+        "shape_pt_sequence",
+        "shape_dist_traveled",
+    ],
+}
+
 def _force_gtfs_ids_to_string(df: pd.DataFrame) -> pd.DataFrame:
     for col in GTFS_ID_COLS:
         if col in df.columns:
@@ -58,7 +75,13 @@ def load_partial_gtfs(gtfs_path: str | Path, logger=None):
         if not path.exists():
             continue
         data = pd.read_csv(path, low_memory=False)
-        loaded[filename] = data if columns is None else data.loc[:, columns].copy()
+
+        if columns is not None:
+            data = data.loc[:, columns].copy()
+
+        data = _force_gtfs_ids_to_string(data)
+
+        loaded[filename] = data
         logger.info("Loaded %s", filename)
 
     missing = [name for name, frame in loaded.items() if frame is None]
@@ -209,16 +232,18 @@ def load_full_gtfs(
     gtfs_dir = Path(gtfs_dir)
     date_to_match = str(date_to_match)
     required = [
-        "agency.txt",
-        "routes.txt",
-        "trips.txt",
-        "stops.txt",
-        "stop_times.txt",
-        "calendar.txt",
-        "calendar_dates.txt",
+    "agency.txt",
+    "routes.txt",
+    "trips.txt",
+    "stops.txt",
+    "stop_times.txt",
+    "calendar.txt",
     ]
+
+    optional = ["calendar_dates.txt"]
     if include:
-        required.extend(include)
+        optional.extend(include)
+    table_names = required + optional
 
     zip_path = gtfs_dir / f"{gtfs_filename_template.format(date=date_to_match)}.zip"
     extract_dir = gtfs_dir / gtfs_filename_template.format(date=date_to_match)
@@ -227,10 +252,18 @@ def load_full_gtfs(
             archive.extractall(extract_dir)
 
     frames = []
-    for name in required:
+
+    for name in table_names:
         file_path = extract_dir / name
+
         if not file_path.exists():
+            if name in OPTIONAL_GTFS_TABLE_COLUMNS:
+                df = pd.DataFrame(columns=OPTIONAL_GTFS_TABLE_COLUMNS[name])
+                frames.append(_force_gtfs_ids_to_string(df))
+                continue
+
             raise FileNotFoundError(f"Expected GTFS file not found: {file_path}")
+
         df = pd.read_csv(file_path, low_memory=False)
         df = _force_gtfs_ids_to_string(df)
         frames.append(df)

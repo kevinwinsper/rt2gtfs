@@ -256,8 +256,17 @@ def _finalize_observed_timetable(date_to_match: str, interpolated_data: pd.DataF
     trip_ids_with_one_stop = stop_counts[stop_counts == 1].index.to_list()
     interpolated_data = interpolated_data[~interpolated_data.trip_id.isin(trip_ids_with_one_stop)]
     interpolated_data.sort_values(by=["trip_id", "stop_sequence"], ascending=True, inplace=True)
+    dedupe_columns = [
+        "trip_id",
+        "stop_id",
+        "arrival_time",
+        "departure_time",
+        "shape_dist_traveled",
+    ]
+    dedupe_columns = [col for col in dedupe_columns if col in interpolated_data.columns]
+
     interpolated_data = interpolated_data.drop_duplicates(
-        subset=["trip_id", "stop_id", "arrival_time", "departure_time", "shape_dist_traveled"],
+        subset=dedupe_columns,
         keep="first",
     )
 
