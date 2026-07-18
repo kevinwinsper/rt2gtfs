@@ -53,7 +53,7 @@ def _load_realtime_observations(
         stats_logger) -> pd.DataFrame:
     rt_df = pd.read_csv(
         config.rt_dir / config.rt_csv_filename_template.format(date=date_to_match),
-        dtype={"start_date": str},
+        dtype={"start_date": str, "trip_id": str, "route_id": str},
         low_memory=False,
     )
 
