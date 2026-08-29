@@ -14,11 +14,12 @@ from .config import MatchingConfig
 from .logging_utils import get_logger
 
 
-def _rt_filepaths_to_list(directory: Path, date_str: str, file_extension: str = ".bin") -> list[Path]:
+def _rt_filepaths_to_list(directory: Path, file_extension: str = ".bin") -> list[Path]:
+    """Return all RT files in a directory already scoped to a service date."""
     filepaths: list[Path] = []
     for root, _, files in os.walk(directory):
         for file in files:
-            if file.endswith(file_extension) and date_str in file:
+            if file.endswith(file_extension):
                 filepaths.append(Path(root) / file)
     return sorted(filepaths)
 
@@ -163,7 +164,7 @@ def _convert_rt_to_csv_single(date: str | int, config: MatchingConfig) -> Path |
     if normalized.unzip_rt:
         _unzip_rt_dir(rt_date_dir, logger=logger)
 
-    filepaths = _rt_filepaths_to_list(rt_date_dir, date, normalized.rt_file_extension)
+    filepaths = _rt_filepaths_to_list(rt_date_dir, normalized.rt_file_extension)
     logger.info("%s: Found %s RT files", date, len(filepaths))
 
     if not filepaths:

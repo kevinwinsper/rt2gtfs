@@ -366,6 +366,121 @@ def load_multiple_gtfs(
     return agencies, routes, trips, stops, stop_times, calendar, calendar_dates, feed_info, shapes
 
 
+def _active_service_ids(scheduled_gtfs: dict, date_to_match: str) -> set[str]:
+    """Return services operating on the target date, including GTFS exceptions."""
+    calendar = scheduled_gtfs.get("calendar", pd.DataFrame())
+    calendar_dates = scheduled_gtfs.get("calendar_dates", pd.DataFrame())
+    target = pd.Timestamp(datetime.strptime(date_to_match, "%Y%m%d"))
+    active: set[str] = set()
+
+    required_calendar_columns = {
+        "service_id", "start_date", "end_date", target.day_name().lower()
+    }
+    if not calendar.empty and required_calendar_columns.issubset(calendar.columns):
+        start_dates = pd.to_datetime(
+            calendar["start_date"].astype("string"), format="%Y%m%d", errors="coerce"
+        )
+        end_dates = pd.to_datetime(
+            calendar["end_date"].astype("string"), format="%Y%m%d", errors="coerce"
+        )
+        runs_on_weekday = pd.to_numeric(
+            calendar[target.day_name().lower()], errors="coerce"
+        ).eq(1)
+        active.update(
+            calendar.loc[
+                runs_on_weekday & start_dates.le(target) & end_dates.ge(target),
+                "service_id",
+            ].astype("string")
+        )
+    elif calendar_dates.empty:
+        # Some feeds omit both calendar files and represent a single-day snapshot.
+        active.update(scheduled_gtfs["trips"]["service_id"].dropna().astype("string"))
+
+    if not calendar_dates.empty and {"service_id", "date", "exception_type"}.issubset(calendar_dates.columns):
+        exceptions = calendar_dates[
+            calendar_dates["date"].astype("string") == date_to_match
+        ]
+        additions = exceptions[
+            pd.to_numeric(exceptions["exception_type"], errors="coerce").eq(1)
+        ]["service_id"].astype("string")
+        removals = exceptions[
+            pd.to_numeric(exceptions["exception_type"], errors="coerce").eq(2)
+        ]["service_id"].astype("string")
+        active.update(additions)
+        active.difference_update(removals)
+
+    return active
+
+
+def _append_unmatched_scheduled_trips(
+    scheduled_gtfs: dict,
+    realtime_timetable: pd.DataFrame,
+    date_to_match: str,
+    matching_periods: list[tuple[str, str]] | None = None,
+) -> pd.DataFrame:
+    """Append scheduled stop times for in-scope active trips without observations."""
+    trips = scheduled_gtfs["trips"]
+    stop_times = scheduled_gtfs["stop_times"]
+    active_service_ids = _active_service_ids(scheduled_gtfs, date_to_match)
+    matched_trip_ids = set(realtime_timetable["trip_id"].dropna().astype("string"))
+
+    unmatched_trips = trips[
+        trips["service_id"].astype("string").isin(active_service_ids)
+        & ~trips["trip_id"].astype("string").isin(matched_trip_ids)
+    ]
+
+    if matching_periods and not unmatched_trips.empty:
+        def gtfs_time_to_seconds(value) -> int | None:
+            try:
+                hours, minutes, seconds = map(int, str(value).split(":"))
+            except (TypeError, ValueError):
+                return None
+            return hours * 3600 + minutes * 60 + seconds
+
+        period_bounds = [
+            (gtfs_time_to_seconds(start), gtfs_time_to_seconds(end))
+            for start, end in matching_periods
+        ]
+        period_bounds = [
+            (start, end)
+            for start, end in period_bounds
+            if start is not None and end is not None
+        ]
+
+        candidate_stop_times = stop_times[
+            stop_times["trip_id"].astype("string").isin(
+                unmatched_trips["trip_id"].astype("string")
+            )
+        ]
+        arrival_seconds = candidate_stop_times["arrival_time"].map(gtfs_time_to_seconds)
+        departure_seconds = candidate_stop_times["departure_time"].map(gtfs_time_to_seconds)
+        within_period = pd.Series(False, index=candidate_stop_times.index)
+        for start, end in period_bounds:
+            within_period |= arrival_seconds.between(start, end) | departure_seconds.between(start, end)
+
+        in_period_trip_ids = candidate_stop_times.loc[
+            within_period, "trip_id"
+        ].astype("string")
+        unmatched_trips = unmatched_trips[
+            unmatched_trips["trip_id"].astype("string").isin(in_period_trip_ids)
+        ]
+
+    unmatched_stop_times = stop_times[
+        stop_times["trip_id"].astype("string").isin(unmatched_trips["trip_id"].astype("string"))
+    ].copy()
+
+    if unmatched_stop_times.empty:
+        return realtime_timetable
+
+    route_lookup = unmatched_trips[["trip_id", "route_id"]].drop_duplicates("trip_id")
+    unmatched_stop_times = unmatched_stop_times.merge(route_lookup, on="trip_id", how="left")
+    unmatched_stop_times["vehicle_id"] = pd.NA
+    if "interpolated" in realtime_timetable.columns:
+        unmatched_stop_times["interpolated"] = pd.NA
+
+    return pd.concat([realtime_timetable, unmatched_stop_times], ignore_index=True, sort=False)
+
+
 def create_observed_timetable(
     scheduled_gtfs: dict,
     realtime_timetable: pd.DataFrame,
@@ -375,6 +490,9 @@ def create_observed_timetable(
     date_to_match: str | int,
     interpolation_flag: bool = True,
     logger=None,
+    include_unmatched_trips: bool = False,
+    matching_periods: list[tuple[str, str]] | None = None,
+    output_zip_name: str | None = None,
 ):
     logger = logger or get_logger(__name__)
     observed_gtfs_dir = Path(observed_gtfs_dir)
@@ -387,6 +505,11 @@ def create_observed_timetable(
     stops = scheduled_gtfs["stops"]
     shapes = scheduled_gtfs["shapes"]
     feed_info = scheduled_gtfs["feed_info"]
+
+    if include_unmatched_trips:
+        realtime_timetable = _append_unmatched_scheduled_trips(
+            scheduled_gtfs, realtime_timetable, date_to_match, matching_periods
+        )
 
     observed_gtfs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -452,7 +575,8 @@ def create_observed_timetable(
 
     feed_info.copy().to_csv(observed_gtfs_dir / "feed_info.txt", index=False)
 
-    zip_path = result_dir / timetable_region / f"{timetable_region}_{date_to_match}.zip"
+    zip_name = output_zip_name or f"{timetable_region}_{date_to_match}.zip"
+    zip_path = result_dir / timetable_region / zip_name
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for file in observed_gtfs_dir.rglob("*"):
             if file.is_file():

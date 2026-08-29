@@ -32,6 +32,11 @@ def _build_parser() -> argparse.ArgumentParser:
     observed_parser.add_argument("--no-extrapolation", action="store_true")
     observed_parser.add_argument("--time-zone", default="Europe/London")
     observed_parser.add_argument("--exclude-interpolated-column", action="store_true")
+    observed_parser.add_argument(
+        "--include-unmatched-trips",
+        action="store_true",
+        help="Include scheduled trips without real-time matches using their scheduled stop times",
+    )
     observed_parser.add_argument("--max-valid-gtfs-hour", type=int, default=28)
     observed_parser.add_argument("--workers", type=int, default=None)
     observed_parser.add_argument("--log-level", default="INFO")
@@ -83,6 +88,7 @@ def main() -> None:
             extrapolate_stop_times=not args.no_extrapolation,
             time_zone=args.time_zone,
             include_interpolated_column=not args.exclude_interpolated_column,
+            include_unmatched_trips=args.include_unmatched_trips,
             max_valid_gtfs_hour=args.max_valid_gtfs_hour,
             n_workers=args.workers or 8,
             log_to_file=args.log_to_file,

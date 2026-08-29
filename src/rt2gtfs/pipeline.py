@@ -67,8 +67,22 @@ def _load_realtime_observations(
         .dt.tz_convert(config.time_zone)
     )
 
+    # GTFS service days can extend beyond midnight (for example, 26:00:00).
+    # Treat the target date plus its configured after-midnight hours as one
+    # operational day. Supplier RT start_date is retained only as metadata.
+    service_start_ts = gtfs_to_unix_timestamp(
+        "00:00:00", date_to_match, geo=config.time_zone
+    )
+    service_end_ts = gtfs_to_unix_timestamp(
+        f"{config.max_valid_gtfs_hour + 1}:00:00",
+        date_to_match,
+        geo=config.time_zone,
+    )
     clean_rt_df = rt_df[
-        (rt_df.start_date == date_to_match) & (rt_df.timestamp_dt.dt.date == pd.to_datetime(date_to_match).date()) & (rt_df.trip_id.notna())
+        rt_df.trip_id.notna()
+        & rt_df["timestamp"].between(
+            service_start_ts, service_end_ts, inclusive="left"
+        )
     ].copy()
 
     pct = round(len(clean_rt_df) * 100 / len(rt_df), 3) if len(rt_df) else 0.0
@@ -158,6 +172,29 @@ def _merge_matches_with_schedule_data(
     complete_stop_time_data["unix_departure_time"] = complete_stop_time_data["departure_time"].apply(
         lambda value: gtfs_to_unix_timestamp(value, date_to_match, geo=config.time_zone)
     )
+
+    # If a trip is observed after midnight but its static times use 00:xx
+    # rather than 24:xx, compare it on the next-day occurrence. This keeps the
+    # operational-day output anchored to date_to_match and avoids a false
+    # approximately 24-hour delay.
+    target_day = pd.Timestamp(date_to_match)
+    local_observation_seconds = (
+        complete_stop_time_data["timestamp_dt"].dt.tz_localize(None) - target_day
+    ).dt.total_seconds()
+    median_observation_seconds = local_observation_seconds.groupby(
+        complete_stop_time_data["trip_id"]
+    ).transform("median")
+    scheduled_hours = pd.to_numeric(
+        complete_stop_time_data["arrival_time"].str.extract(r"^(\d+):", expand=False),
+        errors="coerce",
+    )
+    maximum_scheduled_hour = scheduled_hours.groupby(
+        complete_stop_time_data["trip_id"]
+    ).transform("max")
+    shift_to_next_day = median_observation_seconds.ge(24 * 3600) & maximum_scheduled_hour.lt(24)
+    complete_stop_time_data["schedule_day_shift"] = shift_to_next_day.astype("Int64")
+    complete_stop_time_data.loc[shift_to_next_day, "unix_arrival_time"] += 24 * 3600
+    complete_stop_time_data.loc[shift_to_next_day, "unix_departure_time"] += 24 * 3600
     complete_stop_time_data["delay_abs"] = (
         complete_stop_time_data["timestamp"] - complete_stop_time_data["unix_arrival_time"]
     ).abs()
@@ -281,18 +318,40 @@ def _finalize_observed_timetable(date_to_match: str, interpolated_data: pd.DataF
 
 
 def _write_observed_gtfs(date_to_match: str, scheduled_gtfs: dict, realtime_timetable: pd.DataFrame, config: MatchingConfig, logger):
-    observed_gtfs_dir = config.result_dir / config.timetable_region / date_to_match
-    observed_gtfs_dir.mkdir(parents=True, exist_ok=True)
-    return create_observed_timetable(
+    region_dir = config.result_dir / config.timetable_region
+    matched_gtfs_dir = region_dir / date_to_match
+    matched_gtfs_dir.mkdir(parents=True, exist_ok=True)
+    matched_result = create_observed_timetable(
         scheduled_gtfs,
         realtime_timetable,
         config.result_dir,
-        observed_gtfs_dir,
+        matched_gtfs_dir,
         config.timetable_region,
         date_to_match,
         interpolation_flag=config.include_interpolated_column,
+        include_unmatched_trips=False,
         logger=logger,
     )
+
+    if not config.include_unmatched_trips:
+        return matched_result
+
+    unmatched_gtfs_dir = region_dir / f"{date_to_match}_with_unmatched"
+    unmatched_gtfs_dir.mkdir(parents=True, exist_ok=True)
+    unmatched_result = create_observed_timetable(
+        scheduled_gtfs,
+        realtime_timetable,
+        config.result_dir,
+        unmatched_gtfs_dir,
+        config.timetable_region,
+        date_to_match,
+        interpolation_flag=config.include_interpolated_column,
+        include_unmatched_trips=True,
+        matching_periods=config.matching_periods,
+        output_zip_name=f"{config.timetable_region}_{date_to_match}_with_unmatched.zip",
+        logger=logger,
+    )
+    return matched_result, unmatched_result
 
 
 def _build_config(

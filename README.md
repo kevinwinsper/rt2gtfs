@@ -146,6 +146,7 @@ Important fields in `MatchingConfig` include:
 * `matching_periods`: optional time windows
 * `search_radius_m`: stop search radius
 * `extrapolate_stop_times`: allow extrapolation
+* `include_unmatched_trips`: also create a `_with_unmatched.zip` output containing active scheduled trips without real-time matches; the standard matched-only ZIP is always retained
 * `n_workers`: number of processes
 * `log_to_file`: write logs to file
 

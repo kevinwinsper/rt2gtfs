@@ -25,6 +25,7 @@ class MatchingConfig:
     extrapolate_stop_times: bool = True
     time_zone: str = "Europe/London"
     include_interpolated_column: bool = True
+    include_unmatched_trips: bool = False
     max_valid_gtfs_hour: int = 28
     log_to_file: bool = False
     log_file_name: str = "{date}.log"
@@ -56,6 +57,7 @@ class MatchingConfig:
             extrapolate_stop_times=self.extrapolate_stop_times,
             time_zone=self.time_zone,
             include_interpolated_column=self.include_interpolated_column,
+            include_unmatched_trips=self.include_unmatched_trips,
             max_valid_gtfs_hour=self.max_valid_gtfs_hour,
             log_to_file=self.log_to_file,
             log_file_name=self.log_file_name,
